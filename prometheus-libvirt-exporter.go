@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-	"encoding/binary"
 	
 	"github.com/agomerz/prometheus-libvirt-exporter/libvirt_schema"
 	"github.com/digitalocean/go-libvirt"
@@ -358,7 +357,7 @@ func CollectDomain(ch chan<- prometheus.Metric, l *libvirt.Libvirt, domain domai
 	}
 
 	// Get VCPU info with correct parameters
-    vcpuInfo, err := l.DomainGetCPUStats(domain.libvirtDomain, 0, 0, uint32(rvirCpu), 1)
+    vcpuInfo, _, err := l.DomainGetCPUStats(domain.libvirtDomain, 0, 0, uint32(rvirCpu), 1)
     if err != nil {
         logger.Warn("failed to get vcpu info for domain", zap.String("domain", domain.domainName), zap.Error(err))
         return err
