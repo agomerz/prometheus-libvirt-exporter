@@ -357,36 +357,31 @@ func CollectDomain(ch chan<- prometheus.Metric, l *libvirt.Libvirt, domain domai
 		}
 	}
 
-	// Get number of VCPUs from domain info
-    maxVcpu := int32(rvirCpu)
-    
-    // Get VCPU info with correct parameters
-    vcpuInfo, _, err := l.DomainGetVcpus(domain.libvirtDomain, maxVcpu, 1)
+	// Get VCPU info with correct parameters
+    vcpuInfo, err := l.DomainGetCPUStats(domain.libvirtDomain, 0, 0, uint32(rvirCpu), 1)
     if err != nil {
         logger.Warn("failed to get vcpu info for domain", zap.String("domain", domain.domainName), zap.Error(err))
         return err
     }
 
-    // Process each VCPU's stats
-    for i := 0; i < len(vcpuInfo); i += VcpuInfoSize {
-        state := vcpuInfo[i]
-        cpuTime := binary.LittleEndian.Uint64(vcpuInfo[i+8 : i+16])
+    for i := 0; i < int(rvirCpu); i++ {
+        if len(vcpuInfo) > i && vcpuInfo[i] != nil {
+            ch <- prometheus.MustNewConstMetric(
+                libvirtDomainVcpuDelayDesc,
+                prometheus.CounterValue,
+                float64(vcpuInfo[i].CpuDelay)/1e9, // Convert nanoseconds to seconds
+                domain.domainName,
+                strconv.Itoa(i),
+            )
 
-        ch <- prometheus.MustNewConstMetric(
-            libvirtDomainVcpuDelayDesc,
-            prometheus.CounterValue,
-            float64(state), // State as delay indicator
-            domain.domainName,
-            strconv.Itoa(i/VcpuInfoSize),
-        )
-
-        ch <- prometheus.MustNewConstMetric(
-            libvirtDomainVcpuWaitDesc,
-            prometheus.CounterValue,
-            float64(cpuTime)/1e9,
-            domain.domainName,
-            strconv.Itoa(i/VcpuInfoSize),
-        )
+            ch <- prometheus.MustNewConstMetric(
+                libvirtDomainVcpuWaitDesc,
+                prometheus.CounterValue,
+                float64(vcpuInfo[i].CpuTime)/1e9,
+                domain.domainName,
+                strconv.Itoa(i),
+            )
+        }
     }
 
 	return nil
