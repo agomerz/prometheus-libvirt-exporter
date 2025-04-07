@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"encoding/binary"
 	
 	"github.com/agomerz/prometheus-libvirt-exporter/libvirt_schema"
 	"github.com/digitalocean/go-libvirt"
@@ -352,32 +353,37 @@ func CollectDomain(ch chan<- prometheus.Metric, l *libvirt.Libvirt, domain domai
 		}
 	}
 
-	var vcpuInfo []libvirt.VcpuInfo
-	var vcpuAffinity [][]bool
-	if vcpuInfo, vcpuAffinity, err = l.DomainGetVcpus(domain.libvirtDomain); err != nil {
-		logger.Warn("failed to get vcpu info for domain", zap.String("domain", domain.domainName), zap.Error(err))
-		return err
-	}
+	// Get number of VCPUs from domain info
+    maxVcpu := int32(rvirCpu)
+    
+    // Get VCPU info with correct parameters
+    vcpuInfo, err := l.DomainGetVcpus(domain.libvirtDomain, maxVcpu, 1)
+    if err != nil {
+        logger.Warn("failed to get vcpu info for domain", zap.String("domain", domain.domainName), zap.Error(err))
+        return err
+    }
 
-	for i, vcpu := range vcpuInfo {
-		if vcpu.Delay > 0 {
-			ch <- prometheus.MustNewConstMetric(
-				libvirtDomainVcpuDelayDesc,
-				prometheus.CounterValue,
-				float64(vcpu.Delay)/1e9, // Convert nanoseconds to seconds
-				domain.domainName,
-				strconv.Itoa(i),
-			)
-		}
-		// Wait time is part of VcpuTime
-		ch <- prometheus.MustNewConstMetric(
-			libvirtDomainVcpuWaitDesc,
-			prometheus.CounterValue,
-			float64(vcpu.CpuTime)/1e9,
-			domain.domainName,
-			strconv.Itoa(i),
-		)
-	}
+    // Process each VCPU's stats
+    for i := 0; i < len(vcpuInfo); i += int(libvirt.VcpuInfoSize) {
+        state := vcpuInfo[i]
+        cpuTime := binary.LittleEndian.Uint64(vcpuInfo[i+8 : i+16])
+
+        ch <- prometheus.MustNewConstMetric(
+            libvirtDomainVcpuDelayDesc,
+            prometheus.CounterValue,
+            float64(state), // State as delay indicator
+            domain.domainName,
+            strconv.Itoa(i/int(libvirt.VcpuInfoSize)),
+        )
+
+        ch <- prometheus.MustNewConstMetric(
+            libvirtDomainVcpuWaitDesc,
+            prometheus.CounterValue,
+            float64(cpuTime)/1e9,
+            domain.domainName,
+            strconv.Itoa(i/int(libvirt.VcpuInfoSize)),
+        )
+    }
 
 	return nil
 }
