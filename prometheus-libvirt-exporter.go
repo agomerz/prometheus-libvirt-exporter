@@ -357,29 +357,34 @@ func CollectDomain(ch chan<- prometheus.Metric, l *libvirt.Libvirt, domain domai
 	}
 
 	// Get VCPU info with correct parameters
-    vcpuInfo, _, err := l.DomainGetCPUStats(domain.libvirtDomain, 0, 0, uint32(rvirCpu), 1)
+    vcpuStats, _, err := l.DomainGetCPUStats(domain.libvirtDomain, 0, 0, uint32(rvirCpu), 1)
     if err != nil {
         logger.Warn("failed to get vcpu info for domain", zap.String("domain", domain.domainName), zap.Error(err))
         return err
     }
 
     for i := 0; i < int(rvirCpu); i++ {
-        if len(vcpuInfo) > i && vcpuInfo[i] != nil {
-            ch <- prometheus.MustNewConstMetric(
-                libvirtDomainVcpuDelayDesc,
-                prometheus.CounterValue,
-                float64(vcpuInfo[i].CpuDelay)/1e9, // Convert nanoseconds to seconds
-                domain.domainName,
-                strconv.Itoa(i),
-            )
-
-            ch <- prometheus.MustNewConstMetric(
-                libvirtDomainVcpuWaitDesc,
-                prometheus.CounterValue,
-                float64(vcpuInfo[i].CpuTime)/1e9,
-                domain.domainName,
-                strconv.Itoa(i),
-            )
+        if i < len(vcpuStats) {
+            for _, param := range vcpuStats {
+                switch param.Field {
+                case "vcpu_time":
+                    ch <- prometheus.MustNewConstMetric(
+                        libvirtDomainVcpuWaitDesc,
+                        prometheus.CounterValue,
+                        float64(param.Value.(uint64))/1e9,
+                        domain.domainName,
+                        strconv.Itoa(i),
+                    )
+                case "delay":
+                    ch <- prometheus.MustNewConstMetric(
+                        libvirtDomainVcpuDelayDesc,
+                        prometheus.CounterValue,
+                        float64(param.Value.(uint64))/1e9,
+                        domain.domainName,
+                        strconv.Itoa(i),
+                    )
+                }
+            }
         }
     }
 
