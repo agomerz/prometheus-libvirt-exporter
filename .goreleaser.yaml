@@ -1,0 +1,40 @@
+version: 2
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    main: .
+    binary: prometheus-libvirt-exporter
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+
+signs:
+  - cmd: gpg
+    args:
+      - --output
+      - $signature
+      - --detach-sig
+      - $artifact
+    signature: ${artifact}.sig
+    artifacts: all
