@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 	
 	"github.com/agomerz/prometheus-libvirt-exporter/libvirt_schema"
@@ -351,33 +352,31 @@ func CollectDomain(ch chan<- prometheus.Metric, l *libvirt.Libvirt, domain domai
 		}
 	}
 
-	domainStats, err := l.DomainGetStats(domain.libvirtDomain, libvirt.DOMAIN_STATS_VCPU, libvirt.DOMAIN_STATS_LIVE)
-	if err != nil {
-		logger.Warn("failed to get vcpu stats for domain", zap.String("domain", domain.domainName), zap.Error(err))
+	var vcpuInfo []libvirt.VcpuInfo
+	var vcpuAffinity [][]bool
+	if vcpuInfo, vcpuAffinity, err = l.DomainGetVcpus(domain.libvirtDomain); err != nil {
+		logger.Warn("failed to get vcpu info for domain", zap.String("domain", domain.domainName), zap.Error(err))
 		return err
 	}
 
-	for _, stats := range domainStats {
-		for i, vcpuStats := range stats.Vcpu {
-			if vcpuStats.Delay != -1 {
-				ch <- prometheus.MustNewConstMetric(
-					libvirtDomainVcpuDelayDesc,
-					prometheus.CounterValue,
-					float64(vcpuStats.Delay)/1e9, // Convert nanoseconds to seconds
-					domain.domainName,
-					strconv.Itoa(i),
-				)
-				if vcpuStats.Wait != -1 {
-					ch <- prometheus.MustNewConstMetric(
-						libvirtDomainVcpuWaitDesc,
-						prometheus.CounterValue,
-						float64(vcpuStats.Wait)/1e9,
-						domain.domainName,
-						strconv.Itoa(i),
-					)
-				}
-			}
+	for i, vcpu := range vcpuInfo {
+		if vcpu.Delay > 0 {
+			ch <- prometheus.MustNewConstMetric(
+				libvirtDomainVcpuDelayDesc,
+				prometheus.CounterValue,
+				float64(vcpu.Delay)/1e9, // Convert nanoseconds to seconds
+				domain.domainName,
+				strconv.Itoa(i),
+			)
 		}
+		// Wait time is part of VcpuTime
+		ch <- prometheus.MustNewConstMetric(
+			libvirtDomainVcpuWaitDesc,
+			prometheus.CounterValue,
+			float64(vcpu.CpuTime)/1e9,
+			domain.domainName,
+			strconv.Itoa(i),
+		)
 	}
 
 	return nil
