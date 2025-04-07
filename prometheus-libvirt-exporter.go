@@ -150,6 +150,20 @@ var (
 		[]string{"domain", "instanceName", "instanceId", "flavorName", "userName", "userId", "projectName", "projectId", "host", "source_bridge", "target_device"},
 		nil)
 
+	libvirtDomainVcpuDelayDesc = prometheus.NewDesc(
+		prometheus.BuildFQName("libvirt", "domain_vcpu", "delay_seconds_total"),
+		"Scheduler delay time in seconds for each vCPU",
+		[]string{"domain", "vcpu"},
+		nil,
+	)
+
+	libvirtDomainVcpuWaitDesc = prometheus.NewDesc(
+        prometheus.BuildFQName("libvirt", "domain_vcpu", "wait_seconds_total"),
+        "CPU wait time in seconds for each vCPU",
+        []string{"domain", "vcpu"},
+        nil,
+    )
+
 	domainState = map[libvirt_schema.DomainState]string{
 		libvirt_schema.DOMAIN_NOSTATE:     "no state",
 		libvirt_schema.DOMAIN_RUNNING:     "the domain is running",
@@ -334,6 +348,35 @@ func CollectDomain(ch chan<- prometheus.Metric, l *libvirt.Libvirt, domain domai
 	for _, collectFunc := range []collectFunc{CollectDomainBlockDeviceInfo, CollectDomainNetworkInfo, CollectDomainDomainStatInfo} {
 		if err = collectFunc(ch, l, domain, promLabels); err != nil {
 			logger.Warn("failed to collect some domain info", zap.Error(err))
+		}
+	}
+
+	domainStats, err := l.DomainGetStats(domain.libvirtDomain, libvirt.DOMAIN_STATS_VCPU, libvirt.DOMAIN_STATS_LIVE)
+	if err != nil {
+		logger.Warn("failed to get vcpu stats for domain", zap.String("domain", domain.domainName), zap.Error(err))
+		return err
+	}
+
+	for _, stats := range domainStats {
+		for i, vcpuStats := range stats.Vcpu {
+			if vcpuStats.Delay != -1 {
+				ch <- prometheus.MustNewConstMetric(
+					libvirtDomainVcpuDelayDesc,
+					prometheus.CounterValue,
+					float64(vcpuStats.Delay)/1e9, // Convert nanoseconds to seconds
+					domain.domainName,
+					strconv.Itoa(i),
+				)
+				if vcpuStats.Wait != -1 {
+					ch <- prometheus.MustNewConstMetric(
+						libvirtDomainVcpuWaitDesc,
+						prometheus.CounterValue,
+						float64(vcpuStats.Wait)/1e9,
+						domain.domainName,
+						strconv.Itoa(i),
+					)
+				}
+			}
 		}
 	}
 
@@ -531,6 +574,9 @@ func (e *LibvirtExporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- libvirtDomainStatMemoryAvailableInBytesDesc
 	ch <- libvirtDomainStatMemoryUsableBytesDesc
 	ch <- libvirtDomainStatMemoryRssBytesDesc
+
+	ch <- libvirtDomainVcpuDelayDesc
+	ch <- libvirtDomainVcpuWaitDesc
 }
 
 func main() {
