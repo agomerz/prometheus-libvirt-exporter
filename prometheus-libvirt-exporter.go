@@ -368,21 +368,25 @@ func CollectDomain(ch chan<- prometheus.Metric, l *libvirt.Libvirt, domain domai
             for _, param := range vcpuStats {
                 switch param.Field {
                 case "vcpu_time":
-                    ch <- prometheus.MustNewConstMetric(
-                        libvirtDomainVcpuWaitDesc,
-                        prometheus.CounterValue,
-                        float64(uint64(param.Value.I)),
-                        domain.domainName,
-                        strconv.Itoa(i),
-                    )
+                    if value, ok := param.Value.I.(uint64); ok {
+                        ch <- prometheus.MustNewConstMetric(
+                            libvirtDomainVcpuWaitDesc,
+                            prometheus.CounterValue,
+                            float64(value)/1e9,
+                            domain.domainName,
+                            strconv.Itoa(i),
+                        )
+                    }
                 case "delay":
-                    ch <- prometheus.MustNewConstMetric(
-                        libvirtDomainVcpuDelayDesc,
-                        prometheus.CounterValue,
-                        float64(uint64(param.Value.I)),
-                        domain.domainName,
-                        strconv.Itoa(i),
-                    )
+                    if value, ok := param.Value.I.(uint64); ok {
+                        ch <- prometheus.MustNewConstMetric(
+                            libvirtDomainVcpuDelayDesc,
+                            prometheus.CounterValue,
+                            float64(value)/1e9,
+                            domain.domainName,
+                            strconv.Itoa(i),
+                        )
+                    }
                 }
             }
         }
