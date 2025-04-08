@@ -356,18 +356,20 @@ func CollectDomain(ch chan<- prometheus.Metric, l *libvirt.Libvirt, domain domai
 		}
 	}
 
-	// Get VCPU info with correct parameters
-    vcpuStats, _, err := l.DomainGetCPUStats(domain.libvirtDomain, 0, 0, uint32(rvirCpu), 1)
-    if err != nil {
-        logger.Warn("failed to get vcpu info for domain", zap.String("domain", domain.domainName), zap.Error(err))
-        return err
-    }
-
+	// Get VCPU info with compatible parameters
+    // Use start=0 and nparams=1 to get one param per VCPU
     for i := 0; i < int(rvirCpu); i++ {
-        if i < len(vcpuStats) {
-            for _, param := range vcpuStats {
+        // Get per-VCPU stats
+        stats, _, err := l.DomainGetCPUStats(domain.libvirtDomain, uint32(i), 1, 1, 0)
+        if err != nil {
+            logger.Warn("failed to get stats for VCPU", zap.Int("vcpu", i), zap.Error(err))
+            continue
+        }
+
+        if len(stats) > 0 {
+            for _, param := range stats {
                 switch param.Field {
-                case "vcpu_time":
+                case "cpu_time":
                     if value, ok := param.Value.I.(uint64); ok {
                         ch <- prometheus.MustNewConstMetric(
                             libvirtDomainVcpuWaitDesc,
