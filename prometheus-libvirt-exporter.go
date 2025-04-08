@@ -165,6 +165,13 @@ var (
         nil,
     )
 
+	libvirtDomainVcpuTimeDesc = prometheus.NewDesc(
+        prometheus.BuildFQName("libvirt", "domain_vcpu", "time_seconds_total"),
+        "CPU time used by each vCPU",
+        []string{"domain", "vcpu"},
+        nil,
+    )
+
 	domainState = map[libvirt_schema.DomainState]string{
 		libvirt_schema.DOMAIN_NOSTATE:     "no state",
 		libvirt_schema.DOMAIN_RUNNING:     "the domain is running",
@@ -356,38 +363,54 @@ func CollectDomain(ch chan<- prometheus.Metric, l *libvirt.Libvirt, domain domai
 		}
 	}
 
-	// Get VCPU info with compatible parameters
-    // Use start=0 and nparams=1 to get one param per VCPU
-    for i := 0; i < int(rvirCpu); i++ {
-        // Get per-VCPU stats
-        stats, _, err := l.DomainGetCPUStats(domain.libvirtDomain, uint32(i), 1, 1, 0)
-        if err != nil {
-            logger.Warn("failed to get stats for VCPU", zap.Int("vcpu", i), zap.Error(err))
-            continue
-        }
+	// Get VCPU info
+    vcpuInfo, _, err := l.DomainGetVcpus(domain.libvirtDomain, int32(rvirCpu), int32(VcpuInfoSize))
+    if err != nil {
+        logger.Warn("failed to get vcpu info", zap.String("domain", domain.domainName), zap.Error(err))
+        return err
+    }
 
-        if len(stats) > 0 {
-            for _, param := range stats {
-                switch param.Field {
-                case "cpu_time":
-                    if value, ok := param.Value.I.(uint64); ok {
-                        ch <- prometheus.MustNewConstMetric(
-                            libvirtDomainVcpuWaitDesc,
-                            prometheus.CounterValue,
-                            float64(value)/1e9,
-                            domain.domainName,
-                            strconv.Itoa(i),
-                        )
-                    }
-                case "delay":
-                    if value, ok := param.Value.I.(uint64); ok {
-                        ch <- prometheus.MustNewConstMetric(
-                            libvirtDomainVcpuDelayDesc,
-                            prometheus.CounterValue,
-                            float64(value)/1e9,
-                            domain.domainName,
-                            strconv.Itoa(i),
-                        )
+    numVcpus := len(vcpuInfo)
+    for i := 0; i < numVcpus; i++ {
+        // CPU Time metric
+        ch <- prometheus.MustNewConstMetric(
+            libvirtDomainVcpuTimeDesc,
+            prometheus.CounterValue,
+            float64(vcpuInfo[i].CPUTime)/1e9,
+            domain.domainName,
+            strconv.Itoa(i),
+        )
+    }
+
+    // Get VCPU stats using DomainGetCPUStats for wait and delay times
+    stats, _, err := l.DomainGetCPUStats(domain.libvirtDomain, 0, 0, uint32(rvirCpu), 0)
+    if err != nil {
+        logger.Warn("failed to get CPU stats", zap.Error(err))
+    } else {
+        for i := 0; i < int(rvirCpu); i++ {
+            if i < len(stats) {
+                for _, param := range stats {
+                    switch param.Field {
+                    case "wait":
+                        if value, ok := param.Value.I.(int64); ok {
+                            ch <- prometheus.MustNewConstMetric(
+                                libvirtDomainVcpuWaitDesc,
+                                prometheus.CounterValue,
+                                float64(value)/1e9,
+                                domain.domainName,
+                                strconv.Itoa(i),
+                            )
+                        }
+                    case "delay":
+                        if value, ok := param.Value.I.(int64); ok {
+                            ch <- prometheus.MustNewConstMetric(
+                                libvirtDomainVcpuDelayDesc,
+                                prometheus.CounterValue,
+                                float64(value)/1e9,
+                                domain.domainName,
+                                strconv.Itoa(i),
+                            )
+                        }
                     }
                 }
             }
@@ -591,6 +614,7 @@ func (e *LibvirtExporter) Describe(ch chan<- *prometheus.Desc) {
 
 	ch <- libvirtDomainVcpuDelayDesc
 	ch <- libvirtDomainVcpuWaitDesc
+	ch <- libvirtDomainVcpuTimeDesc
 }
 
 func main() {

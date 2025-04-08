@@ -19,6 +19,9 @@ go-libvirt.
 
 [Pull requests are welcome](https://github.com/digitalocean/go-libvirt/blob/master/CONTRIBUTING.md)!
 
+Feel free to join us in [`#go-libvirt` on libera chat](https://web.libera.chat/)
+if you'd like to discuss the project.
+
 Running the Code Generators
 ---------------------------
 
@@ -272,9 +275,9 @@ func main() {
 Running the Integration Tests
 -----------------------------
 
-Github actions workflows are defined in .github/worflows and can be triggered
-manually in the github GUI after pushing a branch.  There are not currently
-convenient scripts for setting up and running integration tests locally, but
-installing libvirt and defining only the artifacts described by the files in
-testdata should be sufficient to be able to run the integration test file against.
-
+GitHub actions workflows are defined in [.github/workflows](.github/workflows)
+and can be triggered manually in the GitHub UI after pushing a branch. There
+are not currently convenient scripts for setting up and running integration tests
+locally, but installing libvirt and defining only the artifacts described by the
+files in testdata should be sufficient to be able to run the integration test file
+against.
